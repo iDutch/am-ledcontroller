@@ -4,6 +4,7 @@ const wpi = require('wiringpi-node');
 const moment = require('moment');
 const axios = require('axios');
 const fs = require('fs');
+require('dotenv').config();
 
 const pins = {
     "redPin": 2,
@@ -35,8 +36,9 @@ wpi.softPwmWrite(pins.bluePin, 0);
 wpi.softPwmWrite(pins.warmwhitePin, 0);
 wpi.softPwmWrite(pins.coldwhitePin, 0);
 
-var user = "LedController";
-var key = "789d0977830cb074909aebbd281845d65ca3b8052510911c73d317f5ab9c036a";
+console.log(process.env);
+var user = process.env.CLIENT_USER;
+var key = process.env.CLIENT_KEY;
 var schedule = null;
 
 function onchallenge (session, method, extra) {
