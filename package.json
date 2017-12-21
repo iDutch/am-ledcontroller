@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "autobahn": "^17.5.2",
+    "axios": "^0.17.1",
+    "moment": "^2.20.1",
+    "wiringpi-node": "^2.4.4"
+  }
+}
