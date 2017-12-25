@@ -36,10 +36,91 @@ wpi.softPwmWrite(pins.bluePin, 0);
 wpi.softPwmWrite(pins.warmwhitePin, 0);
 wpi.softPwmWrite(pins.coldwhitePin, 0);
 
-console.log(process.env);
 var user = process.env.CLIENT_USER;
 var key = process.env.CLIENT_KEY;
+var api_tokens = null;
+
+const oauth_data = {
+    "grant_type": process.env.USER_GRANT_TYPE,
+    "client_id": process.env.CLIENT_ID,
+    "client_secret": process.env.CLIENT_SECRET,
+    "username": process.env.USER_EMAIL,
+    "password": process.env.USER_PASSWORD,
+    "scope": process.env.SCOPE_INT
+};
+
+function getApiTokens () {
+    axios.post(
+        'https://hoogstraaten.eu/oauth/token', oauth_data, {
+            headers: {
+                'content-type': 'application/json'
+            }
+        })
+        .then(function (response) {
+            api_tokens = response.data;
+            api_tokens.renew_on = moment().add(response.data.expires_in, 'seconds');
+        })
+        .catch(function (error) {
+            console.log(error);
+        });
+}
+
+function refreshApiTokens () {
+    axios.post(
+        'https://hoogstraaten.eu/oauth/token', {
+            "grant_type": 'refresh_token',
+            "refresh_token": api_tokens.refresh_token,
+            "client_id": process.env.CLIENT_ID,
+            "client_secret": process.env.CLIENT_SECRET,
+            "scope": process.env.SCOPE_INT
+        },
+        {
+            headers: {
+                'content-type': 'application/json'
+            }
+        })
+        .then(function (response) {
+            api_tokens = response;
+            api_tokens.renew_on = moment().add(response.expires_in, 'seconds');
+        })
+        .catch(function (error) {
+            console.log(error);
+        });
+}
+
+function api_call(url, method, data) {
+    if (api_tokens == null) {
+        getApiTokens();
+        console.log(api_tokens);
+    } else if (api_tokens.renew_on < moment()) {
+        refreshApiTokens();
+        console.log(api_tokens);
+    } else {
+        axios({
+            method: method,
+            url: url,
+            data: data,
+            headers: {
+                'authorisation': 'Bearer '.concat(api_tokens.access_token),
+                'content-type': 'application/json'
+            }
+        })
+        .then(function(response) {
+            console.log(response.data);
+        });
+    }
+}
+
 var schedule = null;
+
+api_call('https://hoogstraaten.eu/schedule/1', 'get', null);
+
+// fs.readFile('/etc/systemd/system/RGBController/schedule.json', 'utf8', function (err,data) {
+//     if (err) {
+//         return console.log(err);
+//     }
+//     schedule = JSON.parse(data);
+// });
 
 function onchallenge (session, method, extra) {
     console.log("onchallenge", method, extra);
@@ -50,8 +131,8 @@ function onchallenge (session, method, extra) {
     }
 }
 
-function loadSchedule() {
-    axios.get('https://hoogstraaten.eu/schedule.json')
+function loadSchedule(id) {
+    axios.get('https://hoogstraaten.eu/schedule/' + id)
         .then(function(response) {
             //console.log(response.data);
             schedule = response.data;
@@ -142,20 +223,23 @@ var connection = new autobahn.Connection({
 });
 
 connection.onopen = function (session) {
-    console.log('Tada');
-    // // 1) subscribe to a topic
-    // function onevent(args) {
-    //     console.log("Event:", args[0]);
-    // }
-    // session.subscribe('com.myapp.hello', onevent);
+    //Subscribe to topic for notification about updated schedules
+    function onevent(args) {
+        console.log("Event:", args[0]);
+    }
+    session.subscribe('eu.hoogstraaten.fishtank.publish', onevent);
+
+    //Register a procedure for setting a new schedule
+    function setSchedule(args) {
+        loadSchedule(args[0]);
+    }
+    session.register('eu.hoogstraaten.fishtank.setschedule', setSchedule);
+
     //
     // // 2) publish an event
     // session.publish('com.myapp.hello', ['Hello, world!']);
     //
-    // // 3) register a procedure for remoting
-    // function add2(args) {
-    //     return args[0] + args[1];
-    // }
+
     // session.register('com.myapp.add2', add2);
     //
     // // 4) call a remote procedure
