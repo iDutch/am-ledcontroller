@@ -1,4 +1,4 @@
-AUTOBAHN_DEBUG = true;
+AUTOBAHN_DEBUG = false;
 const autobahn = require('autobahn');
 const wpi = require('wiringpi-node');
 const moment = require('moment');
@@ -132,17 +132,11 @@ function api_call(url, method, data) {
     });
 }
 
+var scheduleInterval, cycleInterval = null;
 var schedule = null;
 
-// fs.readFile('/etc/systemd/system/RGBController/schedule.json', 'utf8', function (err,data) {
-//     if (err) {
-//         return console.log(err);
-//     }
-//     schedule = JSON.parse(data);
-// });
-
 function onchallenge (session, method, extra) {
-    console.log("onchallenge", method, extra);
+    //console.log("onchallenge", method, extra);
     if (method === "wampcra") {
         return autobahn.auth_cra.sign(key, extra.challenge);
     } else {
@@ -151,6 +145,7 @@ function onchallenge (session, method, extra) {
 }
 
 function loadSchedule(id) {
+    clearInterval(scheduleInterval);
     api_call('https://hoogstraaten.eu/api/schedule/' + id, 'get', null)
         .then(function (response) {
             schedule = response.data;
@@ -158,7 +153,7 @@ function loadSchedule(id) {
                 if(err) {
                     return console.log(err);
                 }
-                console.log("The file was saved!");
+                //console.log("The file was saved!");
             });
             calculateSchedule(schedule, moment());
             scheduleInterval = setInterval(function () {
@@ -186,7 +181,6 @@ function loadSchedule(id) {
  * @param currenttime
  */
 function calculateSchedule(schedule, currenttime) {
-    console.log(schedule.entries);
     var max = schedule.entries.length - 1;
     for (var index in schedule.entries) {
         var index2 = parseInt(index) + 1;
@@ -209,9 +203,6 @@ function calculateSchedule(schedule, currenttime) {
             //Calculate PWM level for each channel based on difference between level values of the two entries
             //and percentage of the progress
             for (var i in schedule.entries[index].colors) {
-                if (i === 'time') {
-                    continue;
-                }
                 if (parseInt(schedule.entries[index].colors[i]) !== parseInt(schedule.entries[index2].colors[i])) {
                     var powerdiff =  parseInt(schedule.entries[index2].colors[i]) - parseInt(schedule.entries[index].colors[i]);
                     var ledpower = parseInt(schedule.entries[index].colors[i]) + (Math.round(powerdiff * (percentage / 100)));
@@ -225,13 +216,10 @@ function calculateSchedule(schedule, currenttime) {
                         pinvaulues[i + 'Pin'] = parseInt(schedule.entries[index2].colors[i]);
                     }
                 }
-                console.log(schedule.entries[index].colors[i], ledpower, currenttime);
             }
         }
     }
 }
-
-var scheduleInterval, cycleInterval = null;
 
 var connection = new autobahn.Connection({
     url: 'wss://cb.hoogstraaten.eu/ws',
@@ -244,7 +232,11 @@ var connection = new autobahn.Connection({
 connection.onopen = function (session) {
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
-        console.log("Event:", args[0]);
+        var data = args[0];
+        if(schedule.id === data.schedule_id) {
+            loadSchedule(data.schedule_id);
+        }
+
     }
     session.subscribe('eu.hoogstraaten.fishtank.publish', onevent);
 
@@ -254,19 +246,7 @@ connection.onopen = function (session) {
     }
     session.register('eu.hoogstraaten.fishtank.setschedule', setSchedule);
 
-    //
-    // // 2) publish an event
-    // session.publish('com.myapp.hello', ['Hello, world!']);
-    //
-
-    // session.register('com.myapp.add2', add2);
-    //
-    // // 4) call a remote procedure
-    // session.call('com.myapp.add2', [2, 3]).then(
-    //     function (res) {
-    //         console.log("Result:", res);
-    //     }
-    // );
+    console.log('Client connected to cb.hoogstraaten.eu!');
 };
 
 connection.onclose = function (reason, details) {
