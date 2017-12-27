@@ -132,7 +132,7 @@ function api_call(url, method, data) {
     });
 }
 
-var scheduleInterval, cycleInterval = null;
+var scheduleInterval, clockInterval = null;
 var schedule = null;
 
 function onchallenge (session, method, extra) {
@@ -244,7 +244,11 @@ connection.onopen = function (session) {
     function setSchedule(args) {
         loadSchedule(args[0]);
     }
-    session.register('eu.hoogstraaten.fishtank.setschedule', setSchedule);
+    session.register('eu.hoogstraaten.fishtank.' + session.id + '.setschedule', setSchedule);
+
+    clockInterval = setInterval(function () {
+        session.publish('eu.hoogstraaten.fishtank.time.' + session.id, [moment()]);
+    }, 1000);
 
     console.log('Client connected to cb.hoogstraaten.eu!');
 };
