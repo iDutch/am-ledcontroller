@@ -132,7 +132,7 @@ function api_call(url, method, data) {
     });
 }
 
-var scheduleInterval, clockInterval = null;
+var scheduleInterval, clockInterval, cycleInterval, blinkInterval = null;
 var schedule = null;
 
 function onchallenge (session, method, extra) {
@@ -146,6 +146,7 @@ function onchallenge (session, method, extra) {
 
 function loadSchedule(id) {
     clearInterval(scheduleInterval);
+    clearInterval(cycleInterval);
     api_call('https://hoogstraaten.eu/api/schedule/' + id, 'get', null)
         .then(function (response) {
             schedule = response.data;
@@ -174,6 +175,14 @@ function loadSchedule(id) {
         });
 }
 
+function cycleSchedule(speed) {
+    clearInterval(scheduleInterval);
+    var start = moment("00:00", "HH:mm");
+    cycleInterval = setInterval(function () {
+        calculateSchedule(schedule, start.add(1, 'minutes'));
+    }, speed);
+}
+
 /**
  * Calculate the interpolation of loaded schedule
  *
@@ -181,43 +190,62 @@ function loadSchedule(id) {
  * @param currenttime
  */
 function calculateSchedule(schedule, currenttime) {
-    var max = schedule.entries.length - 1;
-    for (var index in schedule.entries) {
-        var index2 = parseInt(index) + 1;
-        var first = moment(schedule.entries[index].time, 'HH:mm');
-        //If last index then compare it with the first one
-        if (index == max) {
-            index2 = 0;
-            var second = moment(schedule.entries[index2].time, 'HH:mm').add(1, 'days');
-        } else {
-            var second = moment(schedule.entries[index2].time, 'HH:mm');
-        }
-        //Get the two schedule entries where the current time is in between.
-        if(currenttime.isBetween(first, second, 'minutes', '[)')){
-            //Determine maxdiff and currentdiff to calculate the percentage
-            //of how far the progression is between the two entries
-            var maxdiff = second.diff(first, 'minutes');
-            var currentdiff = currenttime.diff(first, 'minutes');
-            var percentage = (currentdiff / maxdiff) * 100;
-            //console.log(first, second, maxdiff, currentdiff, percentage, schedule[index2]);
-            //Calculate PWM level for each channel based on difference between level values of the two entries
-            //and percentage of the progress
-            for (var i in schedule.entries[index].colors) {
-                if (parseInt(schedule.entries[index].colors[i]) !== parseInt(schedule.entries[index2].colors[i])) {
-                    var powerdiff =  parseInt(schedule.entries[index2].colors[i]) - parseInt(schedule.entries[index].colors[i]);
-                    var ledpower = parseInt(schedule.entries[index].colors[i]) + (Math.round(powerdiff * (percentage / 100)));
-                    if(pinvaulues[i + 'Pin'] !== ledpower) {
-                        wpi.softPwmWrite(pins[i + 'Pin'], ledpower);
-                        pinvaulues[i + 'Pin'] = ledpower;
-                    }
-                } else {
-                    if(pinvaulues[i + 'Pin'] !== parseInt(schedule.entries[index2].colors[i])) {
-                        wpi.softPwmWrite(pins[i + 'Pin'], parseInt(schedule.entries[index2].colors[i]));
-                        pinvaulues[i + 'Pin'] = parseInt(schedule.entries[index2].colors[i]);
+    clearInterval(blinkInterval);
+    if (schedule.entries.length > 1) {
+        var max = schedule.entries.length - 1;
+        for (var index in schedule.entries) {
+            var index2 = parseInt(index) + 1;
+            var first = moment(schedule.entries[index].time, 'HH:mm');
+            //If last index then compare it with the first one
+            if (index == max) {
+                index2 = 0;
+                var second = moment(schedule.entries[index2].time, 'HH:mm').add(1, 'days');
+            } else {
+                var second = moment(schedule.entries[index2].time, 'HH:mm');
+            }
+            //Get the two schedule entries where the current time is in between.
+            if (currenttime.isBetween(first, second, 'minutes', '[)')) {
+                //Determine maxdiff and currentdiff to calculate the percentage
+                //of how far the progression is between the two entries
+                var maxdiff = second.diff(first, 'minutes');
+                var currentdiff = currenttime.diff(first, 'minutes');
+                var percentage = (currentdiff / maxdiff) * 100;
+                //console.log(first, second, maxdiff, currentdiff, percentage, schedule[index2]);
+                //Calculate PWM level for each channel based on difference between level values of the two entries
+                //and percentage of the progress
+                for (var i in schedule.entries[index].colors) {
+                    if (parseInt(schedule.entries[index].colors[i]) !== parseInt(schedule.entries[index2].colors[i])) {
+                        var powerdiff = parseInt(schedule.entries[index2].colors[i]) - parseInt(schedule.entries[index].colors[i]);
+                        var ledpower = parseInt(schedule.entries[index].colors[i]) + (Math.round(powerdiff * (percentage / 100)));
+                        if (pinvaulues[i + 'Pin'] !== ledpower) {
+                            wpi.softPwmWrite(pins[i + 'Pin'], ledpower);
+                            pinvaulues[i + 'Pin'] = ledpower;
+                        }
+                    } else {
+                        if (pinvaulues[i + 'Pin'] !== parseInt(schedule.entries[index2].colors[i])) {
+                            wpi.softPwmWrite(pins[i + 'Pin'], parseInt(schedule.entries[index2].colors[i]));
+                            pinvaulues[i + 'Pin'] = parseInt(schedule.entries[index2].colors[i]);
+                        }
                     }
                 }
             }
         }
+    } else if (schedule.entries.length === 1) {
+        clearInterval(blinkInterval);
+        for (var i in schedule.entries[0].colors) {
+            if(pinvaulues[i + 'Pin'] !== parseInt(schedule.entries[0].colors[i])) {
+                wpi.softPwmWrite(pins[i + 'Pin'], parseInt(schedule.entries[0].colors[i]));
+                pinvaulues[i + 'Pin'] = parseInt(schedule.entries[0].colors[i]);
+            }
+        }
+    } else {
+        var value = 0;
+        blinkInterval = setInterval(function () {
+            value = 0 ? 100 : 0;
+            for (var i in schedule.entries[0].colors) {
+                wpi.softPwmWrite(pins[i + 'Pin'], value);
+            }
+        }, 500);
     }
 }
 
@@ -244,7 +272,10 @@ connection.onopen = function (session) {
     function setSchedule(args) {
         loadSchedule(args[0]);
     }
-    session.register('eu.hoogstraaten.fishtank.' + session.id + '.setschedule', setSchedule);
+    session.register('eu.hoogstraaten.fishtank.setschedule.' + session.id, setSchedule);
+
+
+
 
     clockInterval = setInterval(function () {
         session.publish('eu.hoogstraaten.fishtank.time.' + session.id, [moment()]);
