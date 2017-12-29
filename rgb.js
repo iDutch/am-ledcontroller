@@ -305,7 +305,7 @@ connection.onopen = function (session) {
     function cycle(args) {
         cycleSchedule(args[0]);
     }
-    session.register('eu.hoogstraaten.fishtank.cycleschedule.')
+    session.register('eu.hoogstraaten.fishtank.cycleschedule.' + session.id, cycle)
 
     //Publish device time
     clockInterval = setInterval(function () {
