@@ -207,7 +207,6 @@ function cycleSchedule(speed) {
  */
 function calculateSchedule(schedule, currenttime) {
     clearInterval(blinkInterval);
-    console.log(schedule.entries.length);
     if (schedule.entries.length > 1) {
         var max = schedule.entries.length - 1;
         for (var index in schedule.entries) {
@@ -256,10 +255,10 @@ function calculateSchedule(schedule, currenttime) {
             }
         }
     } else {
+        clearInterval(cycleInterval);
         var value = 0;
         blinkInterval = setInterval(function () {
             value = !value ? 100 : 0;
-            console.log(value);
             colors = {red: 0, green: 0, blue: 0};
             for (var i in colors) {
                 wpi.softPwmWrite(pins[i + 'Pin'], value);
@@ -316,6 +315,7 @@ connection.onopen = function (session) {
 };
 
 connection.onclose = function (reason, details) {
+    clearInterval(clockInterval);
     console.log("Connection lost:", reason, details);
 }
 
