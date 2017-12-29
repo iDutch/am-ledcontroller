@@ -274,9 +274,6 @@ connection.onopen = function (session) {
     }
     session.register('eu.hoogstraaten.fishtank.setschedule.' + session.id, setSchedule);
 
-
-
-
     clockInterval = setInterval(function () {
         session.publish('eu.hoogstraaten.fishtank.time.' + session.id, [moment()]);
     }, 1000);
