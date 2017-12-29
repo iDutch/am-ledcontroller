@@ -49,6 +49,13 @@ const oauth_data = {
     "scope": process.env.SCOPE_INT
 };
 
+/**
+ * My very ugly API call wrapper
+ *
+ * @param url
+ * @param method
+ * @param data
+ */
 function api_call(url, method, data) {
     return new Promise(function(resolve, reject) {
         if (api_tokens === null) {
@@ -136,7 +143,6 @@ var scheduleInterval, clockInterval, cycleInterval, blinkInterval = null;
 var schedule = null;
 
 function onchallenge (session, method, extra) {
-    //console.log("onchallenge", method, extra);
     if (method === "wampcra") {
         return autobahn.auth_cra.sign(key, extra.challenge);
     } else {
@@ -144,9 +150,15 @@ function onchallenge (session, method, extra) {
     }
 }
 
+/**
+ * Load schedule from API and save to a local file. Or read from local file if API is not available
+ *
+ * @param id
+ */
 function loadSchedule(id) {
     clearInterval(scheduleInterval);
     clearInterval(cycleInterval);
+    clearInterval(blinkInterval);
     api_call('https://hoogstraaten.eu/api/schedule/' + id, 'get', null)
         .then(function (response) {
             schedule = response.data;
@@ -154,7 +166,6 @@ function loadSchedule(id) {
                 if(err) {
                     return console.log(err);
                 }
-                //console.log("The file was saved!");
             });
             calculateSchedule(schedule, moment());
             scheduleInterval = setInterval(function () {
@@ -175,6 +186,11 @@ function loadSchedule(id) {
         });
 }
 
+/**
+ * Cycle through schedule at given speed
+ *
+ * @param speed
+ */
 function cycleSchedule(speed) {
     clearInterval(scheduleInterval);
     var start = moment("00:00", "HH:mm");
@@ -184,13 +200,14 @@ function cycleSchedule(speed) {
 }
 
 /**
- * Calculate the interpolation of loaded schedule
+ * Calculate the interpolation of loaded schedule and set LED values
  *
  * @param schedule
  * @param currenttime
  */
 function calculateSchedule(schedule, currenttime) {
     clearInterval(blinkInterval);
+    console.log(schedule.entries.length);
     if (schedule.entries.length > 1) {
         var max = schedule.entries.length - 1;
         for (var index in schedule.entries) {
@@ -241,14 +258,17 @@ function calculateSchedule(schedule, currenttime) {
     } else {
         var value = 0;
         blinkInterval = setInterval(function () {
-            value = 0 ? 100 : 0;
-            for (var i in schedule.entries[0].colors) {
+            value = !value ? 100 : 0;
+            console.log(value);
+            colors = {red: 0, green: 0, blue: 0};
+            for (var i in colors) {
                 wpi.softPwmWrite(pins[i + 'Pin'], value);
             }
         }, 500);
     }
 }
 
+//Define crossbar stuff
 var connection = new autobahn.Connection({
     url: 'wss://cb.hoogstraaten.eu/ws',
     realm: 'eu.hoogstraaten.fishtank',
@@ -258,9 +278,11 @@ var connection = new autobahn.Connection({
 });
 
 connection.onopen = function (session) {
+
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
         var data = args[0];
+        //If updated schedule has the same id as our loaded schedule then retreive it's updated content from the API
         if(schedule.id === data.schedule_id) {
             loadSchedule(data.schedule_id);
         }
@@ -268,12 +290,24 @@ connection.onopen = function (session) {
     }
     session.subscribe('eu.hoogstraaten.fishtank.publish', onevent);
 
-    //Register a procedure for setting a new schedule
+    //Register procedure for setting a new schedule
     function setSchedule(args) {
         loadSchedule(args[0]);
     }
     session.register('eu.hoogstraaten.fishtank.setschedule.' + session.id, setSchedule);
 
+    //Register procedure for getting the loaded schedule's id
+    session.register('eu.hoogstraaten.fishtank.getactivescheduleid.' + session.id, function () {
+        return schedule.id;
+    });
+
+    //Register procedure for cycleing through loaded schedule
+    function cycle(args) {
+        cycleSchedule(args[0]);
+    }
+    session.register('eu.hoogstraaten.fishtank.cycleschedule.')
+
+    //Publish device time
     clockInterval = setInterval(function () {
         session.publish('eu.hoogstraaten.fishtank.time.' + session.id, [moment()]);
     }, 1000);
@@ -285,5 +319,14 @@ connection.onclose = function (reason, details) {
     console.log("Connection lost:", reason, details);
 }
 
-loadSchedule(1);
+//Load schedule from last known schedule's id
+fs.readFile('/etc/systemd/system/RGBController/schedule.json', 'utf8', function (err,data) {
+    if (err) {
+        return console.log(err);
+    }
+    schedule = JSON.parse(data);
+    loadSchedule(schedule.id);
+});
+
+//Start crossbar
 connection.open();
