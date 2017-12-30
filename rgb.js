@@ -158,7 +158,19 @@ function onchallenge (session, method, extra) {
 function loadSchedule(id) {
     clearInterval(scheduleInterval);
     clearInterval(cycleInterval);
-    clearInterval(blinkInterval);
+
+    wpi.softPwmWrite(pins.redPin, 0);
+    wpi.softPwmWrite(pins.greenPin, 0);
+    wpi.softPwmWrite(pins.bluePin, 0);
+    wpi.softPwmWrite(pins.warmwhitePin, 0);
+    wpi.softPwmWrite(pins.coldwhitePin, 0);
+
+    pinvaulues['redPin'] = 0;
+    pinvaulues['greenPin'] = 0;
+    pinvaulues['bluePin'] = 0;
+    pinvaulues['warmwhitePin'] = 0;
+    pinvaulues['coldwhitePin'] = 0;
+
     api_call('https://hoogstraaten.eu/api/schedule/' + id, 'get', null)
         .then(function (response) {
             schedule = response.data;
