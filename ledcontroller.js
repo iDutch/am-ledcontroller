@@ -1,6 +1,7 @@
 AUTOBAHN_DEBUG = false;
 const autobahn = require('autobahn');
 const wpi = require('wiringpi-node');
+const Gpio = require('pigpio').Gpio;
 const moment = require('moment');
 const axios = require('axios');
 const fs = require('fs');
@@ -8,20 +9,27 @@ require('dotenv').config();
 
 class LedController {
     constructor() {
-        this.pins = {
-            redPin: 2,
-            greenPin: 0,
-            bluePin: 7,
-            warmwhitePin: 4,
-            coldwhitePin: 5
+        this.channels = {
+            redLed: new Gpio(4, {mode: Gpio.OUTPUT}),
+            greenLed: new Gpio(17, {mode: Gpio.OUTPUT}),
+            blueLed: new Gpio(27, {mode: Gpio.OUTPUT}),
+            wwhiteLed: new Gpio(5, {mode: Gpio.OUTPUT}),
+            cwhiteLed: new Gpio(6, {mode: Gpio.OUTPUT}),
         };
-        this.pinvalues = {
-            redPin: 0,
-            greenPin: 0,
-            bluePin: 0,
-            warmwhitePin: 0,
-            coldwhitePin: 0
+        this.channelValues = {
+            redLed: 0,
+            greenLed: 0,
+            blueLed: 0,
+            wwhiteLed: 0,
+            cwhiteLed: 0
         };
+
+        this.status = {
+            redLed: new Gpio(13, {mode: Gpio.OUTPUT}),
+            greenLed: new Gpio(19, {mode: Gpio.OUTPUT}),
+            blueLed: new Gpio(26, {mode: Gpio.OUTPUT}),
+        }
+
         this.oauth_password = {
             grant_type: process.env.USER_GRANT_TYPE,
             client_id: process.env.CLIENT_ID,
@@ -38,15 +46,13 @@ class LedController {
             scope: process.env.SCOPE_INT
         };
 
+        this.channels.redLed.pwmRange(100);
+        this.channels.greenLed.pwmRange(100);
+        this.channels.blueLed.pwmRange(100);
+        this.channels.wwhiteLed.pwmRange(100);
+        this.channels.cwhiteLed.pwmRange(100);
+
         this.api_tokens = null;
-
-        wpi.setup('wpi');
-
-        wpi.pinMode(this.pins.redPin, wpi.SOFT_PWM_OUTPUT);
-        wpi.pinMode(this.pins.greenPin, wpi.SOFT_PWM_OUTPUT);
-        wpi.pinMode(this.pins.bluePin, wpi.SOFT_PWM_OUTPUT);
-        wpi.pinMode(this.pins.warmwhitePin, wpi.SOFT_PWM_OUTPUT);
-        wpi.pinMode(this.pins.coldwhitePin, wpi.SOFT_PWM_OUTPUT);
 
         this.schedule = null;
         this.crossbarsession = null;
@@ -54,6 +60,8 @@ class LedController {
         this.scheduleInterval = 0;
         this.blinkInterval = 0;
         this.cycleInterval = 0;
+        this.loadInterval = 0;
+        this.errorInterval = 0;
     };
     cycleSchedule(speed) {
         clearInterval(this.scheduleInterval);
@@ -96,16 +104,16 @@ class LedController {
                         if (parseInt(this.schedule.data.entries[index].colors[i]) !== parseInt(this.schedule.data.entries[index2].colors[i])) {
                             let powerdiff = parseInt(this.schedule.data.entries[index2].colors[i]) - parseInt(this.schedule.data.entries[index].colors[i]);
                             let ledpower = parseInt(this.schedule.data.entries[index].colors[i]) + (Math.round(powerdiff * (percentage / 100)));
-                            if (this.pinvalues[i + 'Pin'] !== ledpower) {
-                                console.log(this.pins[i + 'Pin'], ledpower);
-                                wpi.softPwmWrite(this.pins[i + 'Pin'], ledpower);
-                                this.pinvalues[i + 'Pin'] = ledpower;
+                            if (this.channelValues[i + 'Led'] !== ledpower) {
+                                console.log(i + 'Led', ledpower);
+                                this.channels[i + 'Led'].pwmWrite(ledpower);
+                                this.channelValues[i + 'Led'] = ledpower;
                             }
                         } else {
-                            if (this.pinvalues[i + 'Pin'] !== parseInt(this.schedule.data.entries[index2].colors[i])) {
-                                console.log(this.pinvalues[i + 'Pin'] !== parseInt(this.schedule.data.entries[index2].colors[i]), this.pins[i + 'Pin'], parseInt(this.schedule.data.entries[index2].colors[i]));
-                                wpi.softPwmWrite(this.pins[i + 'Pin'], parseInt(this.schedule.data.entries[index2].colors[i]));
-                                this.pinvalues[i + 'Pin'] = parseInt(this.schedule.data.entries[index2].colors[i]);
+                            if (this.channelValues[i + 'Led'] !== parseInt(this.schedule.data.entries[index2].colors[i])) {
+                                console.log(this.pinvalues[i + 'Led'] !== parseInt(this.schedule.data.entries[index2].colors[i]), this.pins[i + 'Pin'], parseInt(this.schedule.data.entries[index2].colors[i]));
+                                this.channels[i + 'Led'].pwmWrite(parseInt(this.schedule.data.entries[index2].colors[i]));
+                                this.channelValues[i + 'Led'] = parseInt(this.schedule.data.entries[index2].colors[i]);
                             }
                         }
                     }
@@ -114,19 +122,16 @@ class LedController {
         } else if (this.schedule.data.entries.length === 1) {
             clearInterval(this.blinkInterval);
             for (let i in this.schedule.data.entries[0].colors) {
-                if(this.pinvalues[i + 'Pin'] !== parseInt(this.schedule.data.entries[0].colors[i])) {
-                    wpi.softPwmWrite(pins[i + 'Pin'], parseInt(this.schedule.data.entries[0].colors[i]));
-                    this.pinvalues[i + 'Pin'] = parseInt(this.schedule.data.entries[0].colors[i]);
+                if(this.channelValues[i + 'Led'] !== parseInt(this.schedule.data.entries[0].colors[i])) {
+                    this.channels[i + 'Led'].pwmWrite(parseInt(this.schedule.data.entries[0].colors[i]));
+                    this.channelValues[i + 'Led'] = parseInt(this.schedule.data.entries[0].colors[i]);
                 }
             }
         } else {
             let value = 0;
             this.blinkInterval = setInterval(() => {
-                value = !value ? 100 : 0;
-                let colors = {red: 0, green: 0, blue: 0};
-                for (let i in colors) {
-                    wpi.softPwmWrite(this.pins[i + 'Pin'], value);
-                }
+                value = !value ? 40 : 0;
+                this.status.greenLed.pwmWrite(value);
             }, 500);
         }
     };
@@ -134,17 +139,25 @@ class LedController {
         try {
             clearInterval(this.scheduleInterval);
             clearInterval(this.cycleInterval);
-            wpi.softPwmWrite(this.pins.redPin, 0);
-            wpi.softPwmWrite(this.pins.greenPin, 0);
-            wpi.softPwmWrite(this.pins.bluePin, 0);
-            wpi.softPwmWrite(this.pins.warmwhitePin, 0);
-            wpi.softPwmWrite(this.pins.coldwhitePin, 0);
 
-            this.pinvalues.redPin = 0;
-            this.pinvalues.greenPin = 0;
-            this.pinvalues.bluePin = 0;
-            this.pinvalues.warmwhitePin = 0;
-            this.pinvalues.coldwhitePin = 0;
+            clearInterval(this.loadInterval);
+            let value = 0;
+            this.loadInterval = setInterval(() => {
+                value = !value ? 50 : 0;
+                this.status.blueLed.pwmWrite(value);
+            }, 100);
+
+            this.channels.redLed.pwmWrite(0);
+            this.channels.greenLed.pwmWrite(0);
+            this.channels.blueLed.pwmWrite(0);
+            this.channels.wwhiteLed.pwmWrite(0);
+            this.channels.cwhiteLed.pwmWrite(0);
+
+            this.channelValues.redLed = 0;
+            this.channelValues.greenLed = 0;
+            this.channelValues.blueLed = 0;
+            this.channelValues.wwhiteLed = 0;
+            this.channelValues.cwhiteLed = 0;
 
             this.schedule = await this.apiCall('https://hoogstraaten.eu/api/schedule/' + id, 'get', null);
             fs.writeFile("/etc/systemd/system/RGBController/schedule.json", JSON.stringify(this.schedule), function(err) {
@@ -153,6 +166,10 @@ class LedController {
                 }
             });
             this.calculateLedValues(moment());
+
+            clearInterval(this.loadInterval);
+            this.status.blueLed.pwmWrite(0);
+
             this.scheduleInterval = setInterval(() => {
                 this.calculateLedValues(moment());
                 if (this.crossbarsession !== null) {
@@ -161,6 +178,14 @@ class LedController {
             }, 1000);
         } catch (error) {
             console.log(error);
+
+            clearInterval(this.loadInterval);
+            let value = 0;
+            this.loadInterval = setInterval(() => {
+                value = !value ? 50 : 0;
+                this.status.redLed.pwmWrite(value);
+            }, 1000);
+
             fs.readFile('/etc/systemd/system/RGBController/schedule.json', 'utf8', (err, data) => {
                 if (err) {
                     return console.log(err);
@@ -253,7 +278,9 @@ let connection = new autobahn.Connection({
 
 connection.onopen = function (session) {
     LedControl.crossbarsession = session;
-
+    clearInterval(this.errorInterval);
+    LedControl.status.redLed.pwmWrite(0);
+    LedControl.status.greenLed.pwmWrite(40);
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
         var data = args[0];
@@ -268,6 +295,7 @@ connection.onopen = function (session) {
     //Register procedure for setting a new schedule
     function setSchedule(args) {
         try {
+            console.log(args[0]);
             LedControl.loadSchedule(args[0]);
         } catch (error) {
             console.log(error);
@@ -290,9 +318,16 @@ connection.onopen = function (session) {
 };
 
 connection.onclose = function (reason, details) {
+    this.status.greenLed.pwmWrite(0);
+    let value = 0;
+    this.errorInterval = setInterval(() => {
+        value = !value ? 50 : 0;
+        this.status.redLed.pwmWrite(value);
+    }, 500);
+
     LedControl.crossbarsession = null;
     console.log("Connection lost:", reason, details);
-}
+};
 
 //Start crossbar
 connection.open();
