@@ -1,10 +1,10 @@
 AUTOBAHN_DEBUG = false;
 const autobahn = require('autobahn');
-const wpi = require('wiringpi-node');
-const Gpio = require('pigpio').Gpio;
+const pigpio = require('pigpio');
+const Gpio = pigpio.Gpio;
 const moment = require('moment');
 const axios = require('axios');
-const fs = require('fs');
+const fs = require('mz/fs');
 require('dotenv').config();
 
 class LedController {
@@ -28,7 +28,7 @@ class LedController {
             redLed: new Gpio(13, {mode: Gpio.OUTPUT}),
             greenLed: new Gpio(19, {mode: Gpio.OUTPUT}),
             blueLed: new Gpio(26, {mode: Gpio.OUTPUT}),
-        }
+        };
 
         this.oauth_password = {
             grant_type: process.env.USER_GRANT_TYPE,
@@ -52,6 +52,10 @@ class LedController {
         this.channels.wwhiteLed.pwmRange(100);
         this.channels.cwhiteLed.pwmRange(100);
 
+        this.status.redLed.pwmRange(100);
+        this.status.greenLed.pwmRange(100);
+        this.status.blueLed.pwmRange(100);
+
         this.api_tokens = null;
 
         this.schedule = null;
@@ -62,6 +66,43 @@ class LedController {
         this.cycleInterval = 0;
         this.loadInterval = 0;
         this.errorInterval = 0;
+    };
+
+    _clearChannels() {
+        this.channels.redLed.digitalWrite(0);
+        this.channels.greenLed.digitalWrite(0);
+        this.channels.blueLed.digitalWrite(0);
+        this.channels.wwhiteLed.digitalWrite(0);
+        this.channels.cwhiteLed.digitalWrite(0);
+
+        this.channelValues.redLed = 0;
+        this.channelValues.greenLed = 0;
+        this.channelValues.blueLed = 0;
+        this.channelValues.wwhiteLed = 0;
+        this.channelValues.cwhiteLed = 0;
+    };
+    _clearStatus() {
+        this.status.redLed.digitalWrite(0);
+        this.status.greenLed.digitalWrite(0);
+        this.status.blueLed.digitalWrite(0);
+    };
+    _startLoadingIndicator() {
+        clearInterval(this.loadInterval);
+        let value = 0;
+        this.loadInterval = setInterval(() => {
+            value = !value ? 1 : 0;
+            this.status.blueLed.digitalWrite(value);
+        }, 50);
+        this.status.redLed.pwmWrite(0);
+
+    };
+    _stopLoadingIndicator() {
+        clearInterval(this.loadInterval);
+        this.status.blueLed.digitalWrite(0);
+    }
+    init() {
+        this._clearChannels();
+        this._clearStatus();
     };
     cycleSchedule(speed) {
         clearInterval(this.scheduleInterval);
@@ -74,8 +115,9 @@ class LedController {
         }, parseInt(speed));
     };
     calculateLedValues(time) {
-        clearInterval(this.blinkInterval);
         if (this.schedule.data.entries.length > 1) {
+            clearInterval(this.blinkInterval);
+            this.blinkInterval = 0;
             let max = this.schedule.data.entries.length - 1;
             for (let x in this.schedule.data.entries) {
                 let index = parseInt(x);
@@ -105,13 +147,11 @@ class LedController {
                             let powerdiff = parseInt(this.schedule.data.entries[index2].colors[i]) - parseInt(this.schedule.data.entries[index].colors[i]);
                             let ledpower = parseInt(this.schedule.data.entries[index].colors[i]) + (Math.round(powerdiff * (percentage / 100)));
                             if (this.channelValues[i + 'Led'] !== ledpower) {
-                                console.log(i + 'Led', ledpower);
                                 this.channels[i + 'Led'].pwmWrite(ledpower);
                                 this.channelValues[i + 'Led'] = ledpower;
                             }
                         } else {
                             if (this.channelValues[i + 'Led'] !== parseInt(this.schedule.data.entries[index2].colors[i])) {
-                                console.log(this.pinvalues[i + 'Led'] !== parseInt(this.schedule.data.entries[index2].colors[i]), this.pins[i + 'Pin'], parseInt(this.schedule.data.entries[index2].colors[i]));
                                 this.channels[i + 'Led'].pwmWrite(parseInt(this.schedule.data.entries[index2].colors[i]));
                                 this.channelValues[i + 'Led'] = parseInt(this.schedule.data.entries[index2].colors[i]);
                             }
@@ -121,6 +161,7 @@ class LedController {
             }
         } else if (this.schedule.data.entries.length === 1) {
             clearInterval(this.blinkInterval);
+            this.blinkInterval = 0;
             for (let i in this.schedule.data.entries[0].colors) {
                 if(this.channelValues[i + 'Led'] !== parseInt(this.schedule.data.entries[0].colors[i])) {
                     this.channels[i + 'Led'].pwmWrite(parseInt(this.schedule.data.entries[0].colors[i]));
@@ -128,70 +169,35 @@ class LedController {
                 }
             }
         } else {
-            let value = 0;
-            this.blinkInterval = setInterval(() => {
-                value = !value ? 40 : 0;
-                this.status.greenLed.pwmWrite(value);
-            }, 500);
+            if (this.blinkInterval === 0) {
+                let value = 0;
+                this.blinkInterval = setInterval(() => {
+                    value = !value ? 60 : 0;
+                    this.status.blueLed.pwmWrite(value);
+                }, 500);
+            }
         }
     };
-    async loadSchedule(id) {
-        try {
-            clearInterval(this.scheduleInterval);
-            clearInterval(this.cycleInterval);
+    loadSchedule(id) {
+        clearInterval(this.scheduleInterval);
+        clearInterval(this.cycleInterval);
 
-            clearInterval(this.loadInterval);
-            let value = 0;
-            this.loadInterval = setInterval(() => {
-                value = !value ? 50 : 0;
-                this.status.blueLed.pwmWrite(value);
-            }, 100);
+        this._startLoadingIndicator();
 
-            this.channels.redLed.pwmWrite(0);
-            this.channels.greenLed.pwmWrite(0);
-            this.channels.blueLed.pwmWrite(0);
-            this.channels.wwhiteLed.pwmWrite(0);
-            this.channels.cwhiteLed.pwmWrite(0);
-
-            this.channelValues.redLed = 0;
-            this.channelValues.greenLed = 0;
-            this.channelValues.blueLed = 0;
-            this.channelValues.wwhiteLed = 0;
-            this.channelValues.cwhiteLed = 0;
-
-            this.schedule = await this.apiCall('https://hoogstraaten.eu/api/schedule/' + id, 'get', null);
-            fs.writeFile("/etc/systemd/system/RGBController/schedule.json", JSON.stringify(this.schedule), function(err) {
+        this.apiCall('https://hoogstraaten.eu/api/schedule/' + id, 'get', null).then(data => {
+            console.log(data);
+            this.schedule = data;
+            fs.writeFile("/opt/ledcontroller/schedule.json", JSON.stringify(this.schedule), function(err) {
                 if(err) {
                     return console.log(err);
                 }
             });
-            this.calculateLedValues(moment());
+            this.status.redLed.digitalWrite(0);
+            this._clearChannels();
 
             clearInterval(this.loadInterval);
             this.status.blueLed.pwmWrite(0);
 
-            this.scheduleInterval = setInterval(() => {
-                this.calculateLedValues(moment());
-                if (this.crossbarsession !== null) {
-                    this.crossbarsession.publish('eu.hoogstraaten.fishtank.time.' + this.crossbarsession.id, [moment()]);
-                }
-            }, 1000);
-        } catch (error) {
-            console.log(error);
-
-            clearInterval(this.loadInterval);
-            let value = 0;
-            this.loadInterval = setInterval(() => {
-                value = !value ? 50 : 0;
-                this.status.redLed.pwmWrite(value);
-            }, 1000);
-
-            fs.readFile('/etc/systemd/system/RGBController/schedule.json', 'utf8', (err, data) => {
-                if (err) {
-                    return console.log(err);
-                }
-                this.schedule = JSON.parse(data);
-            });
             this.calculateLedValues(moment());
             this.scheduleInterval = setInterval(() => {
                 this.calculateLedValues(moment());
@@ -199,7 +205,24 @@ class LedController {
                     this.crossbarsession.publish('eu.hoogstraaten.fishtank.time.' + this.crossbarsession.id, [moment()]);
                 }
             }, 1000);
-        }
+            this._stopLoadingIndicator();
+        }).catch(error => {
+            console.log(error);
+            this._stopLoadingIndicator();
+            this.status.redLed.pwmWrite(75);
+            fs.readFile('/opt/ledcontroller/schedule.json', 'utf8').then(content => {
+                //console.log(content);
+                this.schedule = JSON.parse(content);
+            }).catch(error => console.log(error));
+
+            this.calculateLedValues(moment());
+            this.scheduleInterval = setInterval(() => {
+                this.calculateLedValues(moment());
+                if (this.crossbarsession !== null) {
+                    this.crossbarsession.publish('eu.hoogstraaten.fishtank.time.' + this.crossbarsession.id, [moment()]);
+                }
+            }, 1000);
+        });
     };
     async apiCall(url, method, data) {
         if (this.api_tokens === null) {
@@ -219,7 +242,8 @@ class LedController {
                 });
                 return response.data;
             } catch (error) {
-                console.log(error);
+                //console.log(error);
+                return Promise.reject(error);
             }
         } else if (this.api_tokens.renew_on < moment()) {
             try {
@@ -239,25 +263,28 @@ class LedController {
                 });
                 return response.data;
             } catch (error) {
-                console.log(error);
+                //console.log(error);
+                return Promise.reject(error);
             }
         } else {
-            let response = await axios({
-                method: method,
-                url: url,
-                data: data,
-                headers: {
-                    'authorization': 'Bearer '.concat(this.api_tokens.access_token),
-                    'content-type': 'application/json'
-                }
-            });
-            return response.data;
+            try {
+                let response = await axios({
+                    method: method,
+                    url: url,
+                    data: data,
+                    headers: {
+                        'authorization': 'Bearer '.concat(this.api_tokens.access_token),
+                        'content-type': 'application/json'
+                    }
+                });
+                return response.data;
+            } catch (error) {
+                //console.log(error);
+                return Promise.reject(error);
+            }
         }
     };
 }
-
-let LedControl = new LedController();
-LedControl.loadSchedule(1);
 
 function onchallenge (session, method, extra) {
     if (method === "wampcra") {
@@ -266,6 +293,15 @@ function onchallenge (session, method, extra) {
         throw "don't know how to authenticate using '" + method + "'";
     }
 };
+
+let LedControl = new LedController();
+LedControl.init();
+
+//Load schedule from last known schedule's id
+fs.readFile('/opt/ledcontroller/schedule.json', 'utf8').then(content => {
+    LedControl.schedule = JSON.parse(content);
+    LedControl.loadSchedule(LedControl.schedule.data.id);
+}).catch(error => console.log(error));
 
 //Define crossbar stuff
 let connection = new autobahn.Connection({
@@ -278,14 +314,13 @@ let connection = new autobahn.Connection({
 
 connection.onopen = function (session) {
     LedControl.crossbarsession = session;
-    clearInterval(this.errorInterval);
-    LedControl.status.redLed.pwmWrite(0);
-    LedControl.status.greenLed.pwmWrite(40);
+    clearInterval(LedControl.errorInterval);
+    LedControl.status.greenLed.pwmWrite(50);
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
         var data = args[0];
         //If updated schedule has the same id as our loaded schedule then retreive it's updated content from the API
-        if(this.schedule.data.id === data.schedule_id) {
+        if(LedControl.schedule.data.id === data.schedule_id) {
             LedControl.loadSchedule(data.schedule_id);
         }
 
@@ -318,13 +353,7 @@ connection.onopen = function (session) {
 };
 
 connection.onclose = function (reason, details) {
-    this.status.greenLed.pwmWrite(0);
-    let value = 0;
-    this.errorInterval = setInterval(() => {
-        value = !value ? 50 : 0;
-        this.status.redLed.pwmWrite(value);
-    }, 500);
-
+    LedControl.status.greenLed.digitalWrite(0);
     LedControl.crossbarsession = null;
     console.log("Connection lost:", reason, details);
 };
