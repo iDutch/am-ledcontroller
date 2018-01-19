@@ -5,10 +5,62 @@ const Gpio = pigpio.Gpio;
 const moment = require('moment');
 const axios = require('axios');
 const fs = require('mz/fs');
+const LCD = require('lcdi2c');
+
 require('dotenv').config();
 
+class LCDController {
+    constructor(lcd) {
+        this.lcd = lcd;
+    };
+    _pad(pad, str, padLeft) {
+        if (typeof str === 'undefined')
+            return pad;
+        if (padLeft) {
+            return (pad + str).slice(-pad.length);
+        } else {
+            return (str + pad).substring(0, pad.length);
+        }
+    };
+    print(message, line){
+        message = this._pad(new Array(21).join(' '), message, false);
+        this.lcd.println(message, line);
+    }
+}
+
+class Timer {
+    constructor(func, wait, times) {
+        this.times = times;
+        this.wait = wait;
+        this.func = func;
+        let interv = () => {
+            if (typeof this.times === "undefined" || this.times-- > 0) {
+                setTimeout(interv, this.wait);
+                try {
+                    this.func.call(null);
+                }
+                catch(e) {
+                    this.times = 0;
+                    throw e.toString();
+                }
+            }
+        };
+        setTimeout(interv, this.wait);
+    };
+    clear() {
+        this.times = 0;
+    };
+};
+
 class LedController {
-    constructor() {
+    constructor(lcd) {
+
+        pigpio.configureClock(1, pigpio.CLOCK_PCM);
+
+        this.lcdcontroller = lcd;
+
+        this.PWMRange = 500;
+        this.PWMFrequency = 2000;
         this.channels = {
             redLed: new Gpio(4, {mode: Gpio.OUTPUT}),
             greenLed: new Gpio(17, {mode: Gpio.OUTPUT}),
@@ -24,37 +76,33 @@ class LedController {
             cwhiteLed: 0
         };
 
-        this.status = {
-            redLed: new Gpio(13, {mode: Gpio.OUTPUT}),
-            greenLed: new Gpio(19, {mode: Gpio.OUTPUT}),
-            blueLed: new Gpio(26, {mode: Gpio.OUTPUT}),
-        };
-
         this.oauth_password = {
-            grant_type: process.env.USER_GRANT_TYPE,
+            grant_type: 'password',
             client_id: process.env.CLIENT_ID,
             client_secret: process.env.CLIENT_SECRET,
             username: process.env.USER_EMAIL,
             password: process.env.USER_PASSWORD,
-            scope: process.env.SCOPE_INT
+            scope: process.env.SCOPE
         };
         this.oauth_refresh = {
             grant_type: 'refresh_token',
             refresh_token: null,
             client_id: process.env.CLIENT_ID,
             client_secret: process.env.CLIENT_SECRET,
-            scope: process.env.SCOPE_INT
+            scope: process.env.SCOPE
         };
 
-        this.channels.redLed.pwmRange(100);
-        this.channels.greenLed.pwmRange(100);
-        this.channels.blueLed.pwmRange(100);
-        this.channels.wwhiteLed.pwmRange(100);
-        this.channels.cwhiteLed.pwmRange(100);
+        this.channels.redLed.pwmRange(this.PWMRange);
+        this.channels.greenLed.pwmRange(this.PWMRange);
+        this.channels.blueLed.pwmRange(this.PWMRange);
+        this.channels.wwhiteLed.pwmRange(this.PWMRange);
+        this.channels.cwhiteLed.pwmRange(this.PWMRange);
 
-        this.status.redLed.pwmRange(100);
-        this.status.greenLed.pwmRange(100);
-        this.status.blueLed.pwmRange(100);
+        this.channels.redLed.pwmFrequency(this.PWMFrequency);
+        this.channels.greenLed.pwmFrequency(this.PWMFrequency);
+        this.channels.blueLed.pwmFrequency(this.PWMFrequency);
+        this.channels.wwhiteLed.pwmFrequency(this.PWMFrequency);
+        this.channels.cwhiteLed.pwmFrequency(this.PWMFrequency);
 
         this.api_tokens = null;
 
@@ -62,12 +110,10 @@ class LedController {
         this.crossbarsession = null;
 
         this.scheduleInterval = 0;
+        this.clockInterval = 0;
         this.blinkInterval = 0;
         this.cycleInterval = 0;
-        this.loadInterval = 0;
-        this.errorInterval = 0;
     };
-
     _clearChannels() {
         this.channels.redLed.digitalWrite(0);
         this.channels.greenLed.digitalWrite(0);
@@ -81,33 +127,33 @@ class LedController {
         this.channelValues.wwhiteLed = 0;
         this.channelValues.cwhiteLed = 0;
     };
-    _clearStatus() {
-        this.status.redLed.digitalWrite(0);
-        this.status.greenLed.digitalWrite(0);
-        this.status.blueLed.digitalWrite(0);
+    _clearInterval(interval) {
+        if (interval instanceof Timer) {
+            interval.clear();
+        }
     };
-    _startLoadingIndicator() {
-        clearInterval(this.loadInterval);
-        let value = 0;
-        this.loadInterval = setInterval(() => {
-            value = !value ? 1 : 0;
-            this.status.blueLed.digitalWrite(value);
-        }, 50);
-        this.status.redLed.pwmWrite(0);
-
+    _startClock() {
+        this.lcdcontroller.print('Time: ' + moment().format('HH:mm:ss'), 4);
+        this.clockInterval = new Timer(() => {
+            this.lcdcontroller.print('Time: ' + moment().format('HH:mm:ss'), 4);
+            if (this.crossbarsession !== null) {
+                this.crossbarsession.publish('eu.hoogstraaten.fishtank.time.' + this.crossbarsession.id, [moment()]);
+            }
+        }, 1000);
     };
-    _stopLoadingIndicator() {
-        clearInterval(this.loadInterval);
-        this.status.blueLed.digitalWrite(0);
-    }
+    _stopClock() {
+        this._clearInterval(this.clockInterval);
+    };
     init() {
         this._clearChannels();
-        this._clearStatus();
+        this.lcdcontroller.lcd.clear();
+        this.lcdcontroller.print(process.env.CLIENT_USER, 1);
     };
     cycleSchedule(speed) {
-        clearInterval(this.scheduleInterval);
+        this._clearInterval(this.scheduleInterval);
+        this._stopClock();
         let start = moment("00:00", "HH:mm");
-        this.cycleInterval = setInterval(() => {
+        this.cycleInterval = new Timer(() => {
             this.calculateLedValues(start.add(1, 'minutes'));
             if (this.crossbarsession !== null) {
                 this.crossbarsession.publish('eu.hoogstraaten.fishtank.time.' + this.crossbarsession.id, [start]);
@@ -115,9 +161,8 @@ class LedController {
         }, parseInt(speed));
     };
     calculateLedValues(time) {
+        let factor = this.PWMRange / 100;
         if (this.schedule.data.entries.length > 1) {
-            clearInterval(this.blinkInterval);
-            this.blinkInterval = 0;
             let max = this.schedule.data.entries.length - 1;
             for (let x in this.schedule.data.entries) {
                 let index = parseInt(x);
@@ -135,24 +180,24 @@ class LedController {
                 if (time.isBetween(firstentry, secondentry, 'minutes', '[)')) {
                     //Determine maxdiff and currentdiff to calculate the percentage
                     //of how far the progression is between the two entries
-                    let maxdiff = secondentry.diff(firstentry, 'minutes');
-                    let diff = time.diff(firstentry, 'minutes');
+                    let maxdiff = secondentry.diff(firstentry, 'seconds');
+                    let diff = time.diff(firstentry, 'seconds');
                     let percentage = (diff / maxdiff) * 100;
-                    // console.log(firstentry, secondentry, maxdiff, diff, percentage);
+                    //console.log(firstentry, secondentry, maxdiff, diff, percentage);
                     //Calculate PWM level for each channel based on difference between level values of the two entries
                     //and percentage of the progress
                     for (let i in this.schedule.data.entries[index].colors) {
                         //console.log(i, parseInt(this.schedule.data.entries[index].colors[i]) !== parseInt(this.schedule.data.entries[index2].colors[i]));
                         if (parseInt(this.schedule.data.entries[index].colors[i]) !== parseInt(this.schedule.data.entries[index2].colors[i])) {
-                            let powerdiff = parseInt(this.schedule.data.entries[index2].colors[i]) - parseInt(this.schedule.data.entries[index].colors[i]);
-                            let ledpower = parseInt(this.schedule.data.entries[index].colors[i]) + (Math.round(powerdiff * (percentage / 100)));
+                            let powerdiff = parseInt(this.schedule.data.entries[index2].colors[i] * factor) - parseInt(this.schedule.data.entries[index].colors[i] * factor);
+                            let ledpower = parseInt(this.schedule.data.entries[index].colors[i] * factor) + (Math.round(powerdiff * (percentage / 100)));
                             if (this.channelValues[i + 'Led'] !== ledpower) {
                                 this.channels[i + 'Led'].pwmWrite(ledpower);
                                 this.channelValues[i + 'Led'] = ledpower;
                             }
                         } else {
                             if (this.channelValues[i + 'Led'] !== parseInt(this.schedule.data.entries[index2].colors[i])) {
-                                this.channels[i + 'Led'].pwmWrite(parseInt(this.schedule.data.entries[index2].colors[i]));
+                                this.channels[i + 'Led'].pwmWrite(parseInt(this.schedule.data.entries[index2].colors[i] * factor));
                                 this.channelValues[i + 'Led'] = parseInt(this.schedule.data.entries[index2].colors[i]);
                             }
                         }
@@ -160,67 +205,46 @@ class LedController {
                 }
             }
         } else if (this.schedule.data.entries.length === 1) {
-            clearInterval(this.blinkInterval);
-            this.blinkInterval = 0;
             for (let i in this.schedule.data.entries[0].colors) {
-                if(this.channelValues[i + 'Led'] !== parseInt(this.schedule.data.entries[0].colors[i])) {
-                    this.channels[i + 'Led'].pwmWrite(parseInt(this.schedule.data.entries[0].colors[i]));
+                if(this.channelValues[i + 'Led'] !== parseInt(this.schedule.data.entries[0].colors[i]) ) {
+                    this.channels[i + 'Led'].pwmWrite(parseInt(this.schedule.data.entries[0].colors[i] * factor));
                     this.channelValues[i + 'Led'] = parseInt(this.schedule.data.entries[0].colors[i]);
                 }
             }
         } else {
-            if (this.blinkInterval === 0) {
-                let value = 0;
-                this.blinkInterval = setInterval(() => {
-                    value = !value ? 60 : 0;
-                    this.status.blueLed.pwmWrite(value);
-                }, 500);
-            }
+
         }
     };
     loadSchedule(id) {
-        clearInterval(this.scheduleInterval);
-        clearInterval(this.cycleInterval);
-
-        this._startLoadingIndicator();
+        this._clearInterval(this.scheduleInterval);
+        this._clearInterval(this.cycleInterval);
+        this._stopClock();
+        this._startClock();
 
         this.apiCall('https://hoogstraaten.eu/api/schedule/' + id, 'get', null).then(data => {
-            console.log(data);
             this.schedule = data;
             fs.writeFile("/opt/ledcontroller/schedule.json", JSON.stringify(this.schedule), function(err) {
                 if(err) {
                     return console.log(err);
                 }
             });
-            this.status.redLed.digitalWrite(0);
+            this.lcdcontroller.print('Schedule: ' + this.schedule.data.name, 2);
             this._clearChannels();
 
-            clearInterval(this.loadInterval);
-            this.status.blueLed.pwmWrite(0);
-
             this.calculateLedValues(moment());
-            this.scheduleInterval = setInterval(() => {
+            this.scheduleInterval = new Timer(() => {
                 this.calculateLedValues(moment());
-                if (this.crossbarsession !== null) {
-                    this.crossbarsession.publish('eu.hoogstraaten.fishtank.time.' + this.crossbarsession.id, [moment()]);
-                }
             }, 1000);
-            this._stopLoadingIndicator();
         }).catch(error => {
             console.log(error);
-            this._stopLoadingIndicator();
-            this.status.redLed.pwmWrite(75);
             fs.readFile('/opt/ledcontroller/schedule.json', 'utf8').then(content => {
-                //console.log(content);
+                console.log(content);
                 this.schedule = JSON.parse(content);
             }).catch(error => console.log(error));
-
+            this.lcdcontroller.print('Schedule: ' + this.schedule.data.name, 2);
             this.calculateLedValues(moment());
-            this.scheduleInterval = setInterval(() => {
+            this.scheduleInterval = new Timer(() => {
                 this.calculateLedValues(moment());
-                if (this.crossbarsession !== null) {
-                    this.crossbarsession.publish('eu.hoogstraaten.fishtank.time.' + this.crossbarsession.id, [moment()]);
-                }
             }, 1000);
         });
     };
@@ -294,7 +318,8 @@ function onchallenge (session, method, extra) {
     }
 };
 
-let LedControl = new LedController();
+let LCDControl = new LCDController(new LCD(1, 0x3f, 20, 4 ));
+let LedControl = new LedController(LCDControl);
 LedControl.init();
 
 //Load schedule from last known schedule's id
@@ -314,8 +339,7 @@ let connection = new autobahn.Connection({
 
 connection.onopen = function (session) {
     LedControl.crossbarsession = session;
-    clearInterval(LedControl.errorInterval);
-    LedControl.status.greenLed.pwmWrite(50);
+    LCDControl.print('Status: Online', 3);
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
         var data = args[0];
@@ -353,7 +377,7 @@ connection.onopen = function (session) {
 };
 
 connection.onclose = function (reason, details) {
-    LedControl.status.greenLed.digitalWrite(0);
+    LCDControl.print('Status: Online', 3);
     LedControl.crossbarsession = null;
     console.log("Connection lost:", reason, details);
 };
