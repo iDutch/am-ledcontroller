@@ -1,5 +1,5 @@
 const LCD = require('lcdi2c');
-module.exports = class LCDController {
+module.exports = class HD44780 {
     constructor(device, address, cols, rows) {
         this.lcd = new LCD(device, address, cols, rows);
     };
@@ -12,8 +12,11 @@ module.exports = class LCDController {
             return (str + pad).substring(0, pad.length);
         }
     };
-    print(message, line){
+    print(message, line) {
         message = this._pad(new Array(21).join(' '), message, false);
         this.lcd.println(message, line);
+    };
+    clear() {
+        this.lcd.clear();
     }
 };
