@@ -31,10 +31,10 @@ connection.onopen = function (session) {
     Lights.LCD.print('Status: Online', 3);
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
-        var data = args[0];
+        let data = args[0];
         //If updated schedule has the same id as our loaded schedule then retreive it's updated content from the API
-        if(LedInstance.schedule.data.id === data.schedule_id) {
-            LedInstance.loadSchedule(data.schedule_id);
+        if(Lights.schedule.data.id === data.schedule_id) {
+            Lights.loadSchedule(data.schedule_id);
         }
 
     };
