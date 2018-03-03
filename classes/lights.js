@@ -4,7 +4,6 @@ const moment = require('moment');
 const fs = require('mz/fs');
 
 const API = require('./API');
-const HD44780 = require('./HD44780');
 const Timer = require('./timer');
 
 require('dotenv').config();
@@ -12,8 +11,6 @@ require('dotenv').config();
 let Lights = class Lights {
     constructor(PWMClockSampleRate, PWMFrequency, PWMRange) {
         pigpio.configureClock(PWMClockSampleRate, pigpio.CLOCK_PCM);
-
-        this.LCD = new HD44780(1, 0x3f, 20, 4);
 
         this.channels = {
             redLed: new Gpio(26, {mode: Gpio.OUTPUT}),
@@ -53,8 +50,6 @@ let Lights = class Lights {
         this.crossbarsession = null;
 
         this.scheduleInterval = 0;
-        this.clockInterval = 0;
-        this.cycleInterval = 0;
     };
     _clearChannels() {
         this.channels.redLed.digitalWrite(0);
@@ -68,9 +63,7 @@ let Lights = class Lights {
         this.channelValues.blueLed = 0;
         this.channelValues.wwhiteLed = 0;
         this.channelValues.cwhiteLed = 0;
-        if (this.crossbarsession !== null) {
-            this.crossbarsession.publish('eu.hoogstraaten.fishtank.channelvalues.' + this.crossbarsession.id, [this.channelValues]);
-        }
+        process.send({channelValues: this.channelValues});
     };
     _clearInterval(interval) {
         if (interval instanceof Timer) {
@@ -79,22 +72,12 @@ let Lights = class Lights {
     };
     init() {
         this._clearChannels();
-        this.LCD.lcd.clear();
-        this.LCD.print(process.env.CLIENT_USER, 1);
 
         //Load schedule from last known schedule's id
         fs.readFile('/opt/fishtank/schedule.json', 'utf8').then(content => {
             this.schedule = JSON.parse(content);
             this.loadSchedule(this.schedule.data.id);
         }).catch(error => console.log(error));
-
-        this.LCD.print('Time: ' + moment().format('HH:mm:ss'), 4);
-        this.clockInterval = new Timer(() => {
-            this.LCD.print('Time: ' + moment().format('HH:mm:ss'), 4);
-            if (null !== this.crossbarsession) {
-                this.crossbarsession.publish('eu.hoogstraaten.fishtank.time.' + this.crossbarsession.id, [moment()]);
-            }
-        }, 1000);
     };
     calculateLedValues(time) {
         if (this.schedule.data.entries.length > 1) {
@@ -152,14 +135,16 @@ let Lights = class Lights {
         if (this.channelValues[color + 'Led'] !== val) {
             this.channels[color + 'Led'].pwmWrite(val);
             this.channelValues[color + 'Led'] = val;
-            if (this.crossbarsession !== null) {
-                this.crossbarsession.publish('eu.hoogstraaten.fishtank.channelvalues.' + this.crossbarsession.id, [this.channelValues]);
-            }
+            process.send({channelValues: this.channelValues});
+
+
+            // if (this.crossbarsession !== null) {
+            //     this.crossbarsession.publish('eu.hoogstraaten.fishtank.channelvalues.' + this.crossbarsession.id, [this.channelValues]);
+            // }
         }
     };
     loadSchedule(id) {
         this._clearInterval(this.scheduleInterval);
-        this._clearInterval(this.cycleInterval);
 
         API.request('https://hoogstraaten.eu/api/schedule/' + id, 'get', null).then(data => {
             this.schedule = data;
@@ -168,9 +153,9 @@ let Lights = class Lights {
                     return console.log(err);
                 }
             });
-            this.LCD.print('Schedule: ' + this.schedule.data.name, 2);
+            process.send({scheduleName: this.schedule.data.name});
+            process.send({scheduleId: this.schedule.data.id});
             this._clearChannels();
-
             this.calculateLedValues(moment());
             this.scheduleInterval = new Timer(() => {
                 this.calculateLedValues(moment());
@@ -181,7 +166,9 @@ let Lights = class Lights {
                 console.log(content);
                 this.schedule = JSON.parse(content);
             }).catch(error => console.log(error));
-            this.LCD.print('Schedule: ' + this.schedule.data.name, 2);
+            process.send({scheduleName: this.schedule.data.name});
+            process.send({scheduleId: this.schedule.data.id});
+            this._clearChannels();
             this.calculateLedValues(moment());
             this.scheduleInterval = new Timer(() => {
                 this.calculateLedValues(moment());
@@ -190,4 +177,19 @@ let Lights = class Lights {
     };
 };
 
-module.exports = new Lights(process.env.PWM_CLOCK_SAMPLE_RATE, process.env.PWM_FREQUENCY, process.env.PWM_RANGE);
+let lights =  new Lights(process.env.PWM_CLOCK_SAMPLE_RATE, process.env.PWM_FREQUENCY, process.env.PWM_RANGE);
+lights.init();
+
+process.on('message', (msg) => {
+    switch (msg.cmd) {
+        case "loadSchedule":
+            lights.loadSchedule(msg.args);
+            break;
+        case "setChannelOverride":
+            lights.channelOverride[msg.args[0]] = msg.args[1];
+            break;
+        case "setLedValue":
+            lights.setLedValue(msg.args[0], msg.args[1]);
+            break;
+    }
+});
