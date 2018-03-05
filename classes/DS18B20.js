@@ -1,5 +1,4 @@
 const fs = require('mz/fs');
-const API = require('./API');
 const Timer = require('./timer');
 
 require('dotenv').config();
@@ -12,36 +11,35 @@ let DS18B20 = class DS18B20 {
             'decimal': this._parseDecimalData,
             'default': this._parseDecimalData
         };
-    };
 
+        this.temperatureData = [];
+    };
     init() {
         this.sensors((err, sensors) => {
             if (err) {
                 return console.error(err);
             }
-            for(let index in sensors) {
-                this.temperature(sensors[index], (err, value) => {
-                    if (err) {
-                        return console.error(err);
-                    }
-                    API.request('https://hoogstraaten.eu/api/temperature', 'post', {"temperature": value}).catch(error => {
-                        return console.error(error);
-                    });
-                });
-                let temperatureInterval = new Timer(() => {
-                    this.temperature(sensors[index], (err, value) => {
-                        if (err) {
-                            return console.error(err);
-                        }
-                        API.request('https://hoogstraaten.eu/api/temperature', 'post', {"temperature": value}).catch(error => {
-                            return console.error(error);
+
+            if (sensors.length) {
+                new Timer(() => {
+                    for (let index in sensors) {
+                        this.temperature(sensors[index], (err, value) => {
+                            if (err) {
+                                console.error(err);
+                            }
+                            this.temperatureData[index] = value;
                         });
-                    });
+                    }
+                    process.send({temperature: this.temperatureData});
+                }, 1000);
+                new Timer(() => {
+                    process.send({sendtemperature: this.temperatureData});
                 }, 60000);
+            } else {
+                process.send({error: 'No Sensor!'});
             }
         });
     };
-
     _parseHexData(data) {
         let arr = data.split(' ');
 
@@ -73,7 +71,6 @@ let DS18B20 = class DS18B20 {
         }
         return this.parsers[parser](data);
     };
-
     // Get all connected sensor IDs as array
     // @param callback(err, array)
     sensors(callback) {
@@ -84,10 +81,17 @@ let DS18B20 = class DS18B20 {
 
             let parts = data.split('\n');
             parts.pop();
-            return callback(null, parts);
+
+            let regex = /^28-.*/;
+            let sensors = [];
+            for (let index in parts) {
+                if (regex.test(parts[index])) {
+                    sensors.push(parts[index]);
+                }
+            }
+            return callback(null, sensors);
         });
     };
-
     // Get the temperature of a given sensor
     // @param sensor : The sensor ID
     // @param callback : callback (err, value)
@@ -109,7 +113,6 @@ let DS18B20 = class DS18B20 {
             }
         });
     };
-
     temperatureSync(sensor, options) {
         options = options || {};
         let data = fs.readFileSync('/sys/bus/w1/devices/w1_bus_master1/' + sensor + '/w1_slave', 'utf8');

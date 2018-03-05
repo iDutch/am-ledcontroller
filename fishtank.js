@@ -2,6 +2,8 @@ AUTOBAHN_DEBUG = false;
 const autobahn = require('autobahn');
 const moment = require('moment');
 const HD44780 = require('./classes/HD44780');
+const API = require('./classes/API');
+
 const { fork } = require('child_process');
 
 let App = class App {
@@ -21,11 +23,12 @@ let App = class App {
 
         this.lightsProcess = null;
         this.timeProcess = null;
+        this.tempProcess = null;
 
         this._startProcesses();
     };
     _startProcesses() {
-        this.lightsProcess = fork('./classes/lights.js');
+        this.lightsProcess = fork('./processes/lights.js');
         this.lightsProcess.on('message', (msg) => {
             //console.log(msg);
             if (msg.scheduleId !== undefined) {
@@ -42,7 +45,7 @@ let App = class App {
                 }
             }
         });
-        this.timeProcess = fork('./time.js');
+        this.timeProcess = fork('./processes/time.js');
         this.timeProcess.on('message', (msg) => {
             //console.log(msg);
             if (msg.time !== undefined) {
@@ -51,6 +54,22 @@ let App = class App {
                 if (this.cbSession !== null) {
                     this.cbSession.publish('eu.hoogstraaten.fishtank.time.' + this.cbSession.id, [msg.time]);
                 }
+            }
+        });
+        this.tempProcess = fork('./processes/temp.js');
+        this.tempProcess.on('message', (msg) => {
+            if (msg.error !== undefined) {
+                this.LCD[1].print('Temp: ' + msg.error, 4);
+            }
+            if (msg.temperature !== undefined) {
+                let sum = msg.temperature.reduce((a, b) => a + b, 0);
+                this.LCD[1].print('Temp: ' + sum, 4);
+            }
+            if (msg.sendtemperature !== undefined) {
+                let sum = msg.temperature.reduce((a, b) => a + b, 0);
+                API.request('https://hoogstraaten.eu/api/temperature', 'post', {"temperature": sum}).catch(error => {
+                    return console.error(error);
+                });
             }
         });
     }
@@ -80,7 +99,6 @@ let connection = new autobahn.Connection({
 connection.onopen = (session) => {
     app.cbSession = session;
     app.LCD[0].print('Sys. Status: Online', 2);
-    //Lights.LCD[1].print('Status: Online', 3);
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
         let data = args[0];

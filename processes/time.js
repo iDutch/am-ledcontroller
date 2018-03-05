@@ -1,6 +1,6 @@
 const moment = require('moment');
-const Timer = require('./classes/timer');
+const Timer = require('./../classes/timer');
 
-this.clockInterval = new Timer(() => {
+new Timer(() => {
     process.send({time: moment()});
 }, 1000);
