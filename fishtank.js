@@ -8,7 +8,7 @@ const { fork } = require('child_process');
 
 let App = class App {
     constructor() {
-        this.version = 'v0.1.2';
+        this.version = 'v0.2.1-a';
 
         this.scheduleId = null;
         this.scheduleName = null;
@@ -19,7 +19,7 @@ let App = class App {
         this.LCD = [new HD44780(1, 0x3f, 20, 4), new HD44780(1, 0x3e, 20, 4)];
         this.LCD[0].clear();
         this.LCD[1].clear();
-        this.LCD[0].print('AquaMatic v0.1.1', 1);
+        this.LCD[0].print('Aquamotica ' + this.version, 1);
 
         this.lightsProcess = null;
         this.timeProcess = null;
