@@ -8,7 +8,7 @@ const { fork } = require('child_process');
 
 let App = class App {
     constructor() {
-        this.version = 'v0.2.1-a';
+        this.version = 'v0.2.2';
 
         this.scheduleId = null;
         this.scheduleName = null;
@@ -19,11 +19,16 @@ let App = class App {
         this.LCD = [new HD44780(1, 0x3f, 20, 4), new HD44780(1, 0x3e, 20, 4)];
         this.LCD[0].clear();
         this.LCD[1].clear();
-        this.LCD[0].print('Aquamotica ' + this.version, 1);
+        this.LCD[0].print('AquaMotica ' + this.version, 1);
 
         this.lightsProcess = null;
         this.timeProcess = null;
         this.tempProcess = null;
+
+        this.date = null;
+        this.time = null;
+
+        this.temp = null;
 
         this._startProcesses();
     };
@@ -46,14 +51,25 @@ let App = class App {
             }
         });
         this.timeProcess = fork('./processes/time.js');
+        this.date = moment().format('DD/MM/YYYY');
+        this.time = moment().format('HH:mm');
+        this.LCD[0].print('Date: ' + this.date, 3);
+        this.LCD[0].print('Time: ' + this.time, 4);
         this.timeProcess.on('message', (msg) => {
-            //console.log(msg);
-            if (msg.time !== undefined) {
-                this.LCD[0].print('Date: ' + moment(msg.time).format('DD/MM/YYYY'), 3);
-                this.LCD[0].print('Time: ' + moment(msg.time).format('HH:mm:ss'), 4);
-                if (this.cbSession !== null) {
-                    this.cbSession.publish('eu.hoogstraaten.fishtank.time.' + this.cbSession.id, [msg.time]);
+            if (msg.date !== undefined) {
+                if (this.date !== msg.date) {
+                    this.date = msg.date;
+                    this.LCD[0].print('Date: ' + this.date, 3);
                 }
+            }
+            if (msg.time !== undefined) {
+                if (this.time !== msg.time) {
+                    this.time = msg.time;
+                    this.LCD[0].print('Time: ' + this.time, 4);
+                }
+            }
+            if (this.cbSession !== null) {
+                this.cbSession.publish('eu.hoogstraaten.fishtank.time.' + this.cbSession.id, [moment()]);
             }
         });
         this.tempProcess = fork('./processes/temp.js');
@@ -61,12 +77,15 @@ let App = class App {
             if (msg.error !== undefined) {
                 this.LCD[1].print('Temp: ' + msg.error, 4);
             }
-            if (msg.temperature !== undefined) {
+            if (msg.temperature !== undefined && msg.temperature.constructor === Array) {
                 let sum = msg.temperature.reduce((a, b) => a + b, 0);
-                this.LCD[1].print('Temp: ' + sum, 4);
+                if (this.temp !== sum) {
+                    this.temp = sum;
+                    this.LCD[1].print('Temp: ' + this.temp + String.fromCharCode(223) + 'C', 4);
+                }
             }
-            if (msg.sendtemperature !== undefined) {
-                let sum = msg.temperature.reduce((a, b) => a + b, 0);
+            if (msg.sendtemperature !== undefined && msg.sendtemperature.constructor === Array) {
+                let sum = msg.sendtemperature.reduce((a, b) => a + b, 0);
                 API.request('https://hoogstraaten.eu/api/temperature', 'post', {"temperature": sum}).catch(error => {
                     return console.error(error);
                 });
@@ -102,14 +121,15 @@ connection.onopen = (session) => {
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
         let data = args[0];
-        //If updated schedule has the same id as our loaded schedule then retreive it's updated content from the API
-        app.lightsProcess.send({cmd: 'loadSchedule', args: args[0]});
-
+        if (app.scheduleId === data.schedule_id) {
+            app.lightsProcess.send({cmd: 'loadSchedule', args: data.schedule_id});
+        }
     };
     session.subscribe('eu.hoogstraaten.fishtank.publish', onevent);
 
     session.subscribe('wamp.subscription.on_subscribe', function (args, details) {
         session.publish('eu.hoogstraaten.fishtank.channelvalues.' + session.id, [app.channelValues], {}, {eligible: [args[0]]}); //Only publish to the client that just subscribed
+        session.publish('eu.hoogstraaten.fishtank.time.' + session.id, [moment()], {}, {eligible: [args[0]]});
     });
 
     //Register procedure for setting a new schedule
@@ -142,9 +162,8 @@ connection.onopen = (session) => {
 };
 
 connection.onclose = function (reason, details) {
-    app.LCD[0].print('Sys. Status: Offline', 3);
-    //Lights.LCD[1].print('Status: Offline', 3);
-    //Lights.crossbarsession = null;
+    app.LCD[0].print('Sys. Status: Offline', 2);
+    app.cbSession = null;
     console.log("Connection lost:", reason, details);
 };
 
