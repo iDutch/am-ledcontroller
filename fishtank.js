@@ -118,6 +118,7 @@ let connection = new autobahn.Connection({
 connection.onopen = (session) => {
     app.cbSession = session;
     app.LCD[0].print('Sys. Status: Online', 2);
+    
     //Subscribe to topic for notification about updated schedules
     function onevent(args) {
         let data = args[0];
@@ -135,18 +136,19 @@ connection.onopen = (session) => {
     //Register procedure for setting a new schedule
     function setSchedule(args) {
         try {
-            console.log(args[0]);
             app.lightsProcess.send({cmd: 'loadSchedule', args: args[0]});
         } catch (error) {
             console.log(error);
         }
     };
     session.register('eu.hoogstraaten.fishtank.setschedule.' + session.id, setSchedule);
+    
     //Register procedure for getting the loaded schedule's id
     session.register('eu.hoogstraaten.fishtank.getactivescheduleid.' + session.id, function () {
         return app.scheduleId;
     });
 
+    //Register procedure for setting channel override
     function setChannelOverride(args) {
         app.lightsProcess.send({cmd: 'setChannelOverride', args: args});
     }
@@ -167,5 +169,5 @@ connection.onclose = function (reason, details) {
     console.log("Connection lost:", reason, details);
 };
 
-//Start crossbar
+//Connect to Crossbar
 connection.open();
