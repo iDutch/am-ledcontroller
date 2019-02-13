@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const LCD = process.env.NODE_ENV === 'production' ? require('lcdi2c') : require('./lcdi2c-mock');
 module.exports = class HD44780 {
     constructor(device, address, cols, rows) {
