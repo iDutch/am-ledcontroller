@@ -5,7 +5,7 @@ require('dotenv').config();
 
 let API = class API {
     constructor() {
-        this.oauth_url = 'https://hoogstraaten.eu/oauth/token';
+        this.oauth_url = process.env.API_BASEURL + '/oauth/token';
         this.oauth_password = {
             grant_type: 'password',
             client_id: process.env.CLIENT_ID,
@@ -32,7 +32,7 @@ let API = class API {
 
                 let response = await axios({
                     method: method,
-                    url: url,
+                    url: process.env.API_BASEURL + url,
                     data: data,
                     headers: {
                         'authorization': 'Bearer '.concat(this.api_tokens.access_token),
@@ -41,7 +41,6 @@ let API = class API {
                 });
                 return response.data;
             } catch (error) {
-                //console.log(error);
                 return Promise.reject(error);
             }
         } else if (this.api_tokens.renew_on < moment()) {
@@ -62,14 +61,13 @@ let API = class API {
                 });
                 return response.data;
             } catch (error) {
-                //console.log(error);
                 return Promise.reject(error);
             }
         } else {
             try {
                 let response = await axios({
                     method: method,
-                    url: url,
+                    url: process.env.API_BASEURL + url,
                     data: data,
                     headers: {
                         'authorization': 'Bearer '.concat(this.api_tokens.access_token),
@@ -78,7 +76,6 @@ let API = class API {
                 });
                 return response.data;
             } catch (error) {
-                //console.log(error);
                 return Promise.reject(error);
             }
         }

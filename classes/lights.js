@@ -1,4 +1,4 @@
-const pigpio = require('pigpio');
+const pigpio = process.env.NODE_ENV === "production" ? require("pigpio") : require("pigpio-mock");
 const Gpio = pigpio.Gpio;
 const moment = require('moment');
 const fs = require('mz/fs');
@@ -10,8 +10,9 @@ require('dotenv').config();
 
 let Lights = class Lights {
     constructor(PWMClockSampleRate, PWMFrequency, PWMRange) {
-        pigpio.configureClock(PWMClockSampleRate, pigpio.CLOCK_PCM);
-
+        if (process.env.NODE_ENV === "production") {
+            pigpio.configureClock(PWMClockSampleRate, pigpio.CLOCK_PCM);
+        }
         this.channels = {
             redLed: new Gpio(26, {mode: Gpio.OUTPUT}),
             greenLed: new Gpio(19, {mode: Gpio.OUTPUT}),
@@ -34,20 +35,20 @@ let Lights = class Lights {
             cwhiteLed: false
         };
 
-        this.channels.redLed.pwmRange(PWMRange);
-        this.channels.greenLed.pwmRange(PWMRange);
-        this.channels.blueLed.pwmRange(PWMRange);
-        this.channels.wwhiteLed.pwmRange(PWMRange);
-        this.channels.cwhiteLed.pwmRange(PWMRange);
+        if (process.env.NODE_ENV === "production") {
+            this.channels.redLed.pwmRange(PWMRange);
+            this.channels.greenLed.pwmRange(PWMRange);
+            this.channels.blueLed.pwmRange(PWMRange);
+            this.channels.wwhiteLed.pwmRange(PWMRange);
+            this.channels.cwhiteLed.pwmRange(PWMRange);
 
-        this.channels.redLed.pwmFrequency(PWMFrequency);
-        this.channels.greenLed.pwmFrequency(PWMFrequency);
-        this.channels.blueLed.pwmFrequency(PWMFrequency);
-        this.channels.wwhiteLed.pwmFrequency(PWMFrequency);
-        this.channels.cwhiteLed.pwmFrequency(PWMFrequency);
-
+            this.channels.redLed.pwmFrequency(PWMFrequency);
+            this.channels.greenLed.pwmFrequency(PWMFrequency);
+            this.channels.blueLed.pwmFrequency(PWMFrequency);
+            this.channels.wwhiteLed.pwmFrequency(PWMFrequency);
+            this.channels.cwhiteLed.pwmFrequency(PWMFrequency);
+        }
         this.schedule = null;
-        this.crossbarsession = null;
 
         this.scheduleInterval = 0;
     };
@@ -74,7 +75,7 @@ let Lights = class Lights {
         this._clearChannels();
 
         //Load schedule from last known schedule's id
-        fs.readFile('/opt/fishtank/schedule.json', 'utf8').then(content => {
+        fs.readFile(process.env.SCHEDULE_STORAGE_FILE, 'utf8').then(content => {
             this.schedule = JSON.parse(content);
             this.loadSchedule(this.schedule.data.id);
         }).catch(error => console.log(error));
@@ -136,19 +137,14 @@ let Lights = class Lights {
             this.channels[color + 'Led'].pwmWrite(val);
             this.channelValues[color + 'Led'] = val;
             process.send({channelValues: this.channelValues});
-
-
-            // if (this.crossbarsession !== null) {
-            //     this.crossbarsession.publish('eu.hoogstraaten.fishtank.channelvalues.' + this.crossbarsession.id, [this.channelValues]);
-            // }
         }
     };
     loadSchedule(id) {
         this._clearInterval(this.scheduleInterval);
 
-        API.request('https://hoogstraaten.eu/api/schedule/' + id, 'get', null).then(data => {
+        API.request('/api/schedule/' + id, 'get', null).then(data => {
             this.schedule = data;
-            fs.writeFile("/opt/fishtank/schedule.json", JSON.stringify(this.schedule), function(err) {
+            fs.writeFile(process.env.SCHEDULE_STORAGE_FILE, JSON.stringify(this.schedule), function(err) {
                 if(err) {
                     return console.log(err);
                 }
@@ -159,10 +155,10 @@ let Lights = class Lights {
             this.calculateLedValues(moment());
             this.scheduleInterval = new Timer(() => {
                 this.calculateLedValues(moment());
-            }, 1000);
+            }, false, 1000);
         }).catch(error => {
             console.log(error);
-            fs.readFile('/opt/fishtank/schedule.json', 'utf8').then(content => {
+            fs.readFile(process.env.SCHEDULE_STORAGE_FILE, 'utf8').then(content => {
                 console.log(content);
                 this.schedule = JSON.parse(content);
             }).catch(error => console.log(error));
@@ -172,7 +168,7 @@ let Lights = class Lights {
             this.calculateLedValues(moment());
             this.scheduleInterval = new Timer(() => {
                 this.calculateLedValues(moment());
-            }, 1000);
+            }, false, 1000);
         });
     };
 };

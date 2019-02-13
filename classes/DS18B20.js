@@ -30,10 +30,10 @@ let DS18B20 = class DS18B20 {
                             this.temperatureData[index] = value;
                         });
                     }
-                    process.send({temperature: this.temperatureData});
+                    process.send({printTemperature: this.temperatureData});
                 }, 1000);
                 new Timer(() => {
-                    process.send({sendtemperature: this.temperatureData});
+                    process.send({logTemperature: this.temperatureData});
                 }, 60000);
             } else {
                 process.send({error: 'No Sensor!'});

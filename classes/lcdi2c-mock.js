@@ -1,7 +1,9 @@
-const LCD = process.env.NODE_ENV === 'production' ? require('lcdi2c') : require('./lcdi2c-mock');
 module.exports = class HD44780 {
     constructor(device, address, cols, rows) {
-        this.lcd = new LCD(device, address, cols, rows);
+        this.device = device;
+        this.address = address;
+        this.cols = cols;
+        this.rows = rows;
     };
     _pad(pad, str, padLeft) {
         if (typeof str === 'undefined')
@@ -12,11 +14,11 @@ module.exports = class HD44780 {
             return (str + pad).substring(0, pad.length);
         }
     };
-    print(message, line) {
+    println(message, line) {
         message = this._pad(new Array(21).join(' '), message, false);
-        this.lcd.println(message, line);
+        console.log(message, line);
     };
     clear() {
-        this.lcd.clear();
+        console.log('Cleared');
     }
 };
