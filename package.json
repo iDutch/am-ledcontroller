@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "async": "^2.6.2",
     "autobahn": "^17.5.2",
     "axios": "^0.17.1",
     "dotenv": "^4.0.0",
