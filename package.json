@@ -2,7 +2,7 @@
   "dependencies": {
     "async": "^2.6.2",
     "autobahn": "^17.5.2",
-    "axios": "^0.17.1",
+    "axios": "^0.18.1",
     "dotenv": "^4.0.0",
     "glob": "^7.1.2",
     "i2c-bus": "^1.2.5",
