@@ -97,7 +97,7 @@ let Lights = class Lights {
                 }
                 //Get the two schedule entries where the current time is in between.
                 if (time.isBetween(firstentry, secondentry, 'minutes', '[)')) {
-                    //Determine maxdiff and currentdiff to calculate the percentage
+                    //Determine maxdiff and current diff to calculate the percentage
                     //of how far the progression is between the two entries
                     let maxdiff = secondentry.diff(firstentry, 'seconds');
                     let diff = time.diff(firstentry, 'seconds');
@@ -141,6 +141,12 @@ let Lights = class Lights {
     };
     loadSchedule(id) {
         this._clearInterval(this.scheduleInterval);
+
+        this.channelOverride.redLed = false;
+        this.channelOverride.greenLed = false;
+        this.channelOverride.blueLed = false;
+        this.channelOverride.cwhiteLed = false;
+        this.channelOverride.wwhiteLed = false;
 
         API.request('/api/schedule/' + id, 'get', null).then(data => {
             this.schedule = data;

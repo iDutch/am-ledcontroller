@@ -1,17 +1,13 @@
 {
   "dependencies": {
-    "async": "^2.6.2",
-    "autobahn": "^17.5.2",
-    "axios": "^0.18.1",
-    "dotenv": "^4.0.0",
-    "glob": "^7.1.2",
-    "i2c-bus": "^1.2.5",
-    "lcdi2c": "^1.0.6",
-    "moment": "^2.20.1",
+    "autobahn": "^20.2.2",
+    "axios": "^0.19.2",
+    "dotenv": "^8.2.0",
+    "i2c-bus": "^5.1.0",
+    "lcdi2c": "git+https://github.com/lpgera/lcdi2c.git",
+    "moment": "^2.24.0",
     "mz": "^2.7.0",
-    "pigpio": "^0.6.4",
-    "rpio": "^0.9.20",
-    "rpio-pwm": "^0.2.1",
-    "wiringpi-node": "^2.4.4"
+    "pigpio": "^3.0.0",
+    "pigpio-mock": "0.0.1"
   }
 }

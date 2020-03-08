@@ -23,21 +23,26 @@ let connection = new autobahn.Connection({
     realm: process.env.CROSSBAR_REALM,
     authid: process.env.CROSSBAR_CLIENT_USER,
     authmethods: ["wampcra"],
-    onchallenge: onchallenge
+    onchallenge: onchallenge,
+    options: {
+        max_retries: -1
+    }
 });
 
 connection.onopen = (session) => {
     fishtank.cbSession = session;
-    fishtank.LCD[0].print('Sys. Status: Online', 2);
+    fishtank.LCD[0].print('Sys. Status: Online', 3);
     
-    //Subscribe to topic for notification about updated schedules
-    function onevent(args) {
+    //Subscribe to topic for receiving notifications about updated schedules
+    function onScheduleUpdate(args) {
         let data = args[0];
+
+        //Reload if the updated schedule has the same ID as the schedule currently loaded.
         if (fishtank.scheduleId === data.schedule_id) {
             fishtank.lightsProcess.send({cmd: 'loadSchedule', args: data.schedule_id});
         }
-    };
-    session.subscribe('eu.hoogstraaten.fishtank.publish', onevent);
+    }
+    session.subscribe('eu.hoogstraaten.fishtank.publish', onScheduleUpdate);
 
     session.subscribe('wamp.subscription.on_subscribe', function (args, details) {
         session.publish('eu.hoogstraaten.fishtank.channelvalues.' + session.id, [fishtank.channelValues], {}, {eligible: [args[0]]}); //Only publish to the client that just subscribed
@@ -51,7 +56,7 @@ connection.onopen = (session) => {
         } catch (error) {
             console.log(error);
         }
-    };
+    }
     session.register('eu.hoogstraaten.fishtank.setschedule.' + session.id, setSchedule);
     
     //Register procedure for getting the loaded schedule's id
@@ -65,17 +70,17 @@ connection.onopen = (session) => {
     }
     session.register('eu.hoogstraaten.fishtank.setchanneloverride.' + session.id, setChannelOverride);
 
-    //Register procedure for cycleing through loaded schedule
+    //Register procedure for setting led channel to a specific value
     function setLedValue(args) {
         fishtank.lightsProcess.send({cmd: 'setLedValue', args: args});
-    };
+    }
     session.register('eu.hoogstraaten.fishtank.setledvalue.' + session.id, setLedValue);
 
     console.log('Client connected to cb.hoogstraaten.eu!');
 };
 
 connection.onclose = (reason, details) => {
-    fishtank.LCD[0].print('Sys. Status: Offline', 2);
+    fishtank.LCD[0].print('Sys. Status: Offline', 3);
     fishtank.cbSession = null;
     console.log("Connection lost:", reason, details);
 };

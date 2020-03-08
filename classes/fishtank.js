@@ -5,7 +5,7 @@ const { fork } = require('child_process');
 
 module.exports = class Fishtank {
     constructor() {
-        this.version = 'v0.2.2';
+        this.version = 'v0.2.3';
 
         this.scheduleId = null;
         this.scheduleName = null;
@@ -13,7 +13,7 @@ module.exports = class Fishtank {
 
         this.cbSession = null;
 
-        this.LCD = [new HD44780(1, 0x3f, 20, 4), new HD44780(1, 0x3e, 20, 4)];
+        this.LCD = [new HD44780(1, 0x3e, 20, 4), new HD44780(1, 0x3f, 20, 4)];
         this.LCD[0].clear();
         this.LCD[1].clear();
         this.LCD[0].print('AquaMotica ' + this.version, 1);
@@ -38,7 +38,7 @@ module.exports = class Fishtank {
             }
             if (msg.scheduleName !== undefined) {
                 this.scheduleName = msg.scheduleName;
-                this.LCD[1].print('Schedule: ' + msg.scheduleName, 1);
+                this.LCD[0].print('Prog: ' + msg.scheduleName, 2);
             }
             if (msg.channelValues !== undefined) {
                 this.channelValues = msg.channelValues;
@@ -50,15 +50,8 @@ module.exports = class Fishtank {
         this.timeProcess = fork('./processes/time.js');
         this.date = moment().format('DD/MM/YYYY');
         this.time = moment().format('HH:mm');
-        this.LCD[0].print('Date: ' + this.date, 3);
         this.LCD[0].print('Time: ' + this.time, 4);
         this.timeProcess.on('message', (msg) => {
-            if (msg.date !== undefined) {
-                if (this.date !== msg.date) {
-                    this.date = msg.date;
-                    this.LCD[0].print('Date: ' + this.date, 3);
-                }
-            }
             if (msg.time !== undefined) {
                 if (this.time !== msg.time) {
                     this.time = msg.time;
