@@ -86,27 +86,34 @@ let Lights = class Lights {
             for (let x in this.schedule.data.entries) {
                 let index = parseInt(x);
                 let index2 = index + 1;
-                let firstentry = moment(this.schedule.data.entries[index].time, 'HH:mm');
-                let secondentry = null;
-                //If last index then compare it with the first one
+                let start_time = moment(this.schedule.data.entries[index].time, 'HH:mm');
+                let end_time = null;
+
                 if (index === max) {
                     index2 = 0;
-                    secondentry = moment(this.schedule.data.entries[index2].time, 'HH:mm').add(1, 'days');
+                    end_time = moment(this.schedule.data.entries[index2].time, 'HH:mm');
+                    //Past midnight? Set start_time a day back
+                    if (time.isBefore(start_time)) {
+                        start_time = start_time.add(-1, 'days');
+                    //If not, we set end_time a day forward
+                    } else {
+                        end_time = end_time.add(1, 'days');
+                    }
+
                 } else {
-                    secondentry = moment(this.schedule.data.entries[index2].time, 'HH:mm');
+                    end_time = moment(this.schedule.data.entries[index2].time, 'HH:mm');
                 }
+
                 //Get the two schedule entries where the current time is in between.
-                if (time.isBetween(firstentry, secondentry, 'minutes', '[)')) {
+                if (time.isBetween(start_time, end_time, 'minutes', '[)')) {
                     //Determine maxdiff and current diff to calculate the percentage
                     //of how far the progression is between the two entries
-                    let maxdiff = secondentry.diff(firstentry, 'seconds');
-                    let diff = time.diff(firstentry, 'seconds');
+                    let maxdiff = end_time.diff(start_time, 'seconds');
+                    let diff = time.diff(start_time, 'seconds');
                     let percentage = (diff / maxdiff) * 100;
-                    //console.log(firstentry, secondentry, maxdiff, diff, percentage);
                     //Calculate PWM level for each channel based on difference between level values of the two entries
                     //and percentage of the progress
                     for (let i in this.schedule.data.entries[index].colors) {
-                        //console.log(i, parseInt(this.schedule.data.entries[index].colors[i]) !== parseInt(this.schedule.data.entries[index2].colors[i]));
                         if (parseInt(this.schedule.data.entries[index].colors[i]) !== parseInt(this.schedule.data.entries[index2].colors[i])) {
                             let powerdiff = parseInt(this.schedule.data.entries[index2].colors[i]) - parseInt(this.schedule.data.entries[index].colors[i]);
                             let ledpower = parseInt(this.schedule.data.entries[index].colors[i]) + (Math.round(powerdiff * (percentage / 100)));
@@ -127,8 +134,6 @@ let Lights = class Lights {
                     this.setLedValue(i, parseInt(this.schedule.data.entries[0].colors[i]));
                 }
             }
-        } else {
-
         }
     };
     setLedValue(color, value) {
