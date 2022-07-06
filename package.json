@@ -5,7 +5,7 @@
     "dotenv": "^8.2.0",
     "i2c-bus": "^5.1.0",
     "lcdi2c": "git+https://github.com/lpgera/lcdi2c.git",
-    "moment": "^2.24.0",
+    "moment": "^2.29.4",
     "mz": "^2.7.0",
     "pigpio": "^3.0.0",
     "pigpio-mock": "0.0.1"
