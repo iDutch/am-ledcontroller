@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "autobahn": "^20.2.2",
-    "axios": "^0.19.2",
+    "axios": "^0.28.0",
     "dotenv": "^8.2.0",
     "i2c-bus": "^5.1.0",
     "lcdi2c": "git+https://github.com/lpgera/lcdi2c.git",
